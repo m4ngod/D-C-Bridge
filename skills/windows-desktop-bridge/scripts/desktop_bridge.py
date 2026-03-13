@@ -296,6 +296,27 @@ class Handler(BaseHTTPRequestHandler):
                 max_checks = data.get('maxChecks', 5)
                 result = wait_for_foreground(data['title'], interval_seconds=interval_seconds, max_checks=max_checks)
                 return self._json(200, result)
+            if path == '/pycharm-action':
+                action = data['action']
+                req = data.get('requireForegroundTitle', 'UTI-STOCKSIM')
+                ensure_foreground_matches(req)
+                actions = {
+                    'open-settings': ['ctrl', 'alt', 's'],
+                    'search-everywhere': ['shift', 'shift'],
+                    'find-action': ['ctrl', 'shift', 'a'],
+                    'new-file': ['alt', 'insert'],
+                }
+                if action == 'search-everywhere':
+                    raise ValueError('unsupported hotkey: repeated-shift-not-implemented')
+                if action == 'new-file':
+                    raise ValueError('unsupported hotkey: alt-insert-not-implemented')
+                keys = actions.get(action)
+                if not keys:
+                    raise ValueError(f'unknown_pycharm_action: {action}')
+                before = get_foreground_window_info()
+                result = send_hotkey(keys)
+                after = get_foreground_window_info()
+                return self._json(200, {'action': action, 'result': result, 'foreground_before': before, 'foreground_after': after})
             if path == '/hotkey':
                 before = get_foreground_window_info()
                 req = data.get('requireForegroundTitle')

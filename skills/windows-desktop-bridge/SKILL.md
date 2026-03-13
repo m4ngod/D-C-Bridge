@@ -9,25 +9,29 @@ Create or use a local Windows desktop automation bridge for GUI tasks.
 
 ## Quick workflow
 
-1. Prefer a local HTTP bridge that exposes a small set of actions: health, screenshot, windows, activate, launch, type, hotkey, click.
+1. Prefer a local HTTP bridge that exposes a small set of actions: health, foreground, windows, activate, launch, wait-foreground, type, hotkey, click, screenshot, screenshot-window.
 2. Keep the first version dependency-light. Prefer PowerShell/Win32/standard library over large frameworks.
 3. Store bridge code in `scripts/` and keep operational notes in `references/`.
 4. Test the bridge immediately after creation with a health check and at least one visible side effect.
 5. For fragile GUI actions, require an explicit target window title or executable path.
+6. For IDE automation, prefer strict foreground checks before sending hotkeys or text.
 
 ## Default implementation
 
 Use `scripts/desktop_bridge.py` as the local HTTP server.
 
-Capabilities of the minimum viable bridge:
+Capabilities of the current bridge:
 - `GET /health`
 - `GET /windows`
+- `GET /foreground`
 - `POST /launch`
 - `POST /activate`
+- `POST /wait-foreground`
 - `POST /hotkey`
 - `POST /type`
 - `POST /click`
 - `POST /screenshot`
+- `POST /screenshot-window`
 
 ## Safety
 

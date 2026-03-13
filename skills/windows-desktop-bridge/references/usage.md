@@ -11,9 +11,16 @@ D:\Users\AIGOD\AppData\Local\Programs\Python311\python.exe D:\Users\AIGOD\.openc
 ```powershell
 curl http://127.0.0.1:8765/health
 curl http://127.0.0.1:8765/windows
+curl http://127.0.0.1:8765/foreground
 ```
 
 ## Example actions
+
+Wait for PyCharm to become foreground (3s interval, 5 checks):
+
+```powershell
+curl -X POST http://127.0.0.1:8765/wait-foreground -H "Content-Type: application/json" -d '{"title":"UTI-STOCKSIM","intervalSeconds":3,"maxChecks":5}'
+```
 
 Launch PyCharm:
 
