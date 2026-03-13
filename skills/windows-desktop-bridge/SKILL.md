@@ -32,6 +32,7 @@ Capabilities of the current bridge:
 - `POST /click`
 - `POST /screenshot`
 - `POST /screenshot-window`
+- `POST /pycharm-action`
 
 ## Safety
 

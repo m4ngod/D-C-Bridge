@@ -22,6 +22,25 @@ Wait for PyCharm to become foreground (3s interval, 5 checks):
 curl -X POST http://127.0.0.1:8765/wait-foreground -H "Content-Type: application/json" -d '{"title":"UTI-STOCKSIM","intervalSeconds":3,"maxChecks":5}'
 ```
 
+Run a common PyCharm action:
+
+```powershell
+curl -X POST http://127.0.0.1:8765/pycharm-action -H "Content-Type: application/json" -d '{"action":"open-settings","requireForegroundTitle":"UTI-STOCKSIM"}'
+```
+
+Useful actions currently supported:
+- `open-settings`
+- `find-action`
+- `recent-files`
+- `project-tool-window`
+- `terminal-tool-window`
+- `commit-tool-window`
+- `escape`
+- `confirm`
+- `next-field`
+- `prev-field`
+- `close-window`
+
 Launch PyCharm:
 
 ```powershell

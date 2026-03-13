@@ -140,12 +140,27 @@ def send_hotkey(keys):
         ('ctrl', 'shift', 'a'): '^+a',
         ('ctrl', 'n'): '^n',
         ('ctrl', 'o'): '^o',
+        ('ctrl', 'alt', 'shift', 's'): '^%+s',
         ('alt', 'enter'): '%~',
         ('ctrl', 'shift', 'n'): '^+n',
+        ('ctrl', 'e'): '^e',
+        ('alt', '1'): '%1',
+        ('alt', '2'): '%2',
+        ('alt', '3'): '%3',
+        ('alt', '4'): '%4',
+        ('alt', '5'): '%5',
+        ('alt', '6'): '%6',
+        ('alt', '7'): '%7',
+        ('alt', '8'): '%8',
+        ('alt', '9'): '%9',
+        ('alt', '0'): '%0',
+        ('alt', 'f12'): '%{F12}',
         ('enter',): '~',
         ('esc',): '{ESC}',
         ('escape',): '{ESC}',
         ('tab',): '{TAB}',
+        ('shift', 'tab'): '+{TAB}',
+        ('f4',): '{F4}',
     }
     key = tuple(k.lower() for k in keys)
     seq = mapping.get(key)
@@ -302,14 +317,17 @@ class Handler(BaseHTTPRequestHandler):
                 ensure_foreground_matches(req)
                 actions = {
                     'open-settings': ['ctrl', 'alt', 's'],
-                    'search-everywhere': ['shift', 'shift'],
                     'find-action': ['ctrl', 'shift', 'a'],
-                    'new-file': ['alt', 'insert'],
+                    'recent-files': ['ctrl', 'e'],
+                    'project-tool-window': ['alt', '1'],
+                    'terminal-tool-window': ['alt', 'f12'],
+                    'commit-tool-window': ['alt', '0'],
+                    'escape': ['esc'],
+                    'confirm': ['enter'],
+                    'next-field': ['tab'],
+                    'prev-field': ['shift', 'tab'],
+                    'close-window': ['esc'],
                 }
-                if action == 'search-everywhere':
-                    raise ValueError('unsupported hotkey: repeated-shift-not-implemented')
-                if action == 'new-file':
-                    raise ValueError('unsupported hotkey: alt-insert-not-implemented')
                 keys = actions.get(action)
                 if not keys:
                     raise ValueError(f'unknown_pycharm_action: {action}')
