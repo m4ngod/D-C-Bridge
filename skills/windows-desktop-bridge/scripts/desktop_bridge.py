@@ -99,9 +99,29 @@ def find_window(title_substring):
     return None
 
 
+def get_foreground_window_info():
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return None
+    title = get_window_text(hwnd)
+    pid = ctypes.c_ulong()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    rect = RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    return {
+        'hwnd': int(hwnd),
+        'title': title,
+        'pid': int(pid.value),
+        'rect': {'left': rect.left, 'top': rect.top, 'right': rect.right, 'bottom': rect.bottom}
+    }
+
+
 def activate_window(hwnd):
     user32.ShowWindow(hwnd, SW_RESTORE)
-    return bool(user32.SetForegroundWindow(hwnd))
+    ok = bool(user32.SetForegroundWindow(hwnd))
+    time.sleep(0.2)
+    fg = get_foreground_window_info()
+    return ok, fg
 
 
 def launch(path, args=None):
@@ -115,21 +135,31 @@ def keybd_event(vk, flags=0):
 
 
 def send_hotkey(keys):
-    keycodes = [KEY_MAP[k.lower()] for k in keys]
-    for code in keycodes:
-        keybd_event(code, 0)
-        time.sleep(0.03)
-    for code in reversed(keycodes):
-        keybd_event(code, 2)
-        time.sleep(0.03)
-    return {'sent': keys}
+    mapping = {
+        ('ctrl', 'alt', 's'): '^%s',
+        ('ctrl', 'shift', 'a'): '^+a',
+        ('ctrl', 'n'): '^n',
+        ('ctrl', 'o'): '^o',
+        ('alt', 'enter'): '%~',
+        ('ctrl', 'shift', 'n'): '^+n',
+        ('enter',): '~',
+        ('esc',): '{ESC}',
+        ('escape',): '{ESC}',
+        ('tab',): '{TAB}',
+    }
+    key = tuple(k.lower() for k in keys)
+    seq = mapping.get(key)
+    if not seq:
+        raise ValueError(f'unsupported hotkey: {keys}')
+    ps = "$ws = New-Object -ComObject WScript.Shell; Start-Sleep -Milliseconds 100; $ws.SendKeys('" + seq.replace("'", "''") + "')"
+    subprocess.run(['powershell', '-NoProfile', '-Command', ps], check=True)
+    return {'sent': keys, 'sequence': seq}
 
 
 def send_text(text):
-    for ch in text:
-        user32.keybd_event(ord(ch.upper()) if len(ch) == 1 else 0, 0, 0, 0)
-        user32.keybd_event(ord(ch.upper()) if len(ch) == 1 else 0, 0, 2, 0)
-        time.sleep(0.01)
+    safe = text.replace("'", "''")
+    ps = "$ws = New-Object -ComObject WScript.Shell; Start-Sleep -Milliseconds 100; $ws.SendKeys('" + safe + "')"
+    subprocess.run(['powershell', '-NoProfile', '-Command', ps], check=True)
     return {'typed': text}
 
 
@@ -140,15 +170,13 @@ def click(x, y):
     return {'clicked': {'x': x, 'y': y}}
 
 
-def screenshot_b64():
-    width = user32.GetSystemMetrics(0)
-    height = user32.GetSystemMetrics(1)
+def _capture_rect_png_b64(left, top, width, height):
     hdc_screen = user32.GetDC(0)
     hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
     hbmp = gdi32.CreateCompatibleBitmap(hdc_screen, width, height)
     gdi32.SelectObject(hdc_mem, hbmp)
     SRCCOPY = 0x00CC0020
-    gdi32.BitBlt(hdc_mem, 0, 0, width, height, hdc_screen, 0, 0, SRCCOPY)
+    gdi32.BitBlt(hdc_mem, 0, 0, width, height, hdc_screen, left, top, SRCCOPY)
 
     bmi = BITMAPINFO()
     bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
@@ -181,6 +209,52 @@ def screenshot_b64():
     return base64.b64encode(png).decode('ascii')
 
 
+def screenshot_b64():
+    width = user32.GetSystemMetrics(0)
+    height = user32.GetSystemMetrics(1)
+    return _capture_rect_png_b64(0, 0, width, height)
+
+
+def ensure_foreground_matches(title_substring):
+    fg = get_foreground_window_info()
+    needle = (title_substring or '').lower()
+    if not fg or needle not in (fg.get('title') or '').lower():
+        raise RuntimeError('前台不匹配')
+    return fg
+
+
+def wait_for_foreground(title_substring, interval_seconds=3, max_checks=5):
+    warnings = []
+    for i in range(1, max_checks + 1):
+        fg = get_foreground_window_info()
+        needle = (title_substring or '').lower()
+        if fg and needle in (fg.get('title') or '').lower():
+            return {
+                'ok': True,
+                'matched_on_check': i,
+                'foreground': fg,
+                'warnings': warnings,
+            }
+        if i < max_checks:
+            warnings.append('前台不匹配')
+            time.sleep(interval_seconds)
+    raise RuntimeError('前台不匹配')
+
+
+def screenshot_window_b64(title_substring, require_foreground_title=None):
+    if require_foreground_title:
+        ensure_foreground_matches(require_foreground_title)
+    w = find_window(title_substring)
+    if not w:
+        raise RuntimeError('window_not_found')
+    rect = w['rect']
+    left = rect['left']
+    top = rect['top']
+    width = max(1, rect['right'] - rect['left'])
+    height = max(1, rect['bottom'] - rect['top'])
+    return {'window': w, 'png_base64': _capture_rect_png_b64(left, top, width, height)}
+
+
 class Handler(BaseHTTPRequestHandler):
     def _json(self, code, obj):
         self.send_response(code)
@@ -195,9 +269,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {'ok': True})
             if path == '/windows':
                 return self._json(200, {'windows': enum_windows()})
+            if path == '/foreground':
+                return self._json(200, {'window': get_foreground_window_info()})
             return self._json(404, {'error': 'not_found'})
         except Exception as e:
-            return self._json(500, {'error': str(e)})
+            msg = str(e)
+            code = 'foreground_mismatch' if msg == '前台不匹配' else 'internal_error'
+            return self._json(500, {'error': msg, 'code': code})
 
     def do_POST(self):
         path = urlparse(self.path).path
@@ -211,19 +289,49 @@ class Handler(BaseHTTPRequestHandler):
                 w = find_window(data.get('title', ''))
                 if not w:
                     return self._json(404, {'error': 'window_not_found'})
-                ok = activate_window(w['hwnd'])
-                return self._json(200, {'ok': ok, 'window': w})
+                ok, fg = activate_window(w['hwnd'])
+                return self._json(200, {'ok': ok, 'window': w, 'foreground_after': fg})
+            if path == '/wait-foreground':
+                interval_seconds = data.get('intervalSeconds', 3)
+                max_checks = data.get('maxChecks', 5)
+                result = wait_for_foreground(data['title'], interval_seconds=interval_seconds, max_checks=max_checks)
+                return self._json(200, result)
             if path == '/hotkey':
-                return self._json(200, send_hotkey(data['keys']))
+                before = get_foreground_window_info()
+                req = data.get('requireForegroundTitle')
+                if req:
+                    ensure_foreground_matches(req)
+                result = send_hotkey(data['keys'])
+                after = get_foreground_window_info()
+                return self._json(200, {'result': result, 'foreground_before': before, 'foreground_after': after})
             if path == '/type':
-                return self._json(200, send_text(data['text']))
+                before = get_foreground_window_info()
+                req = data.get('requireForegroundTitle')
+                if req:
+                    ensure_foreground_matches(req)
+                result = send_text(data['text'])
+                after = get_foreground_window_info()
+                return self._json(200, {'result': result, 'foreground_before': before, 'foreground_after': after})
             if path == '/click':
-                return self._json(200, click(data['x'], data['y']))
+                before = get_foreground_window_info()
+                req = data.get('requireForegroundTitle')
+                if req:
+                    ensure_foreground_matches(req)
+                result = click(data['x'], data['y'])
+                after = get_foreground_window_info()
+                return self._json(200, {'result': result, 'foreground_before': before, 'foreground_after': after})
             if path == '/screenshot':
-                return self._json(200, {'png_base64': screenshot_b64()})
+                req = data.get('requireForegroundTitle')
+                if req:
+                    ensure_foreground_matches(req)
+                return self._json(200, {'png_base64': screenshot_b64(), 'foreground': get_foreground_window_info()})
+            if path == '/screenshot-window':
+                return self._json(200, screenshot_window_b64(data['title'], data.get('requireForegroundTitle')))
             return self._json(404, {'error': 'not_found'})
         except Exception as e:
-            return self._json(500, {'error': str(e)})
+            msg = str(e)
+            code = 'foreground_mismatch' if msg == '前台不匹配' else 'internal_error'
+            return self._json(500, {'error': msg, 'code': code})
 
 
 def main():
